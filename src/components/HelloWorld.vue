@@ -14,6 +14,7 @@ const stream = ref(null) // Хранение потока для доступа 
 const selectedPhoto = ref(null) // Для просмотра фото в полный размер
 const uploadStatus = ref('') // Статус загрузки фото на сервер
 const isUploading = ref(false) // Индикатор процесса загрузки
+const isFrontCamera = ref(true) // Флаг для отслеживания, какая камера используется
 
 // Load the saved count from localStorage when the component is mounted
 onMounted(() => {
@@ -43,7 +44,9 @@ async function toggleCamera() {
     if (!isStreamActive.value) {
       // Start the camera
       stream.value = await navigator.mediaDevices.getUserMedia({ 
-        video: true,
+        video: {
+          facingMode: isFrontCamera.value ? 'user' : 'environment' // 'user' - фронтальная, 'environment' - задняя
+        },
         audio: false 
       })
       
@@ -64,6 +67,39 @@ async function toggleCamera() {
   } catch (error) {
     errorMessage.value = `Ошибка при доступе к камере: ${error.message}`
     console.error('Ошибка доступа к камере:', error)
+  }
+}
+
+// Функция для переключения между фронтальной и задней камерой
+async function switchCamera() {
+  // Сначала останавливаем текущий поток
+  if (stream.value) {
+    const tracks = stream.value.getTracks()
+    tracks.forEach(track => track.stop())
+    stream.value = null
+  }
+  
+  // Переключаем флаг камеры
+  isFrontCamera.value = !isFrontCamera.value
+  
+  // Если камера была включена, перезапускаем её с новым выбором
+  if (isStreamActive.value) {
+    try {
+      const videoElement = document.getElementById('camera-stream')
+      
+      stream.value = await navigator.mediaDevices.getUserMedia({ 
+        video: {
+          facingMode: isFrontCamera.value ? 'user' : 'environment'
+        },
+        audio: false 
+      })
+      
+      videoElement.srcObject = stream.value
+      errorMessage.value = ''
+    } catch (error) {
+      errorMessage.value = `Ошибка при переключении камеры: ${error.message}`
+      console.error('Ошибка при переключении камеры:', error)
+    }
   }
 }
 
@@ -232,6 +268,10 @@ function dataURLtoBlob(dataURL) {
       <div v-if="isStreamActive" class="camera-controls">
         <button type="button" @click="capturePhoto" class="control-button">
           <span class="camera-icon">📸</span> Сделать фото
+        </button>
+        
+        <button type="button" @click="switchCamera" class="control-button switch-camera-button">
+          <span class="camera-icon">🔄</span> {{ isFrontCamera ? 'Задняя камера' : 'Фронтальная камера' }}
         </button>
       </div>
       
@@ -545,5 +585,13 @@ function dataURLtoBlob(dataURL) {
   color: #1890ff;
   margin-top: 10px;
   font-weight: bold;
+}
+
+.switch-camera-button {
+  background-color: #2196f3;
+}
+
+.switch-camera-button:hover {
+  background-color: #0d8bf2;
 }
 </style>
