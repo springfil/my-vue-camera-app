@@ -1,6 +1,6 @@
 import { ref } from 'vue';
-import { captureVideoFrame } from '../utils/imageUtils';
-import photoService from '../services/photoService';
+import { captureVideoFrame } from '../utils/mediaUtils';
+import mediaService from '../services/mediaService';
 import Photo from '../models/Photo';
 
 /**

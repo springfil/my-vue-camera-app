@@ -4,6 +4,7 @@
 export default class MockServer {
   constructor() {
     this.photos = [];
+    this.videos = [];
     this.lastId = 5000;
   }
 
@@ -74,6 +75,73 @@ export default class MockServer {
   }
 
   /**
+   * Получение всех видео
+   */
+  async getVideos() {
+    // Имитация задержки сети
+    await this._delay(800);
+
+    // Возвращаем демо-видео, если список пуст
+    if (this.videos.length === 0) {
+      this._generateDemoVideos();
+    }
+
+    return [...this.videos]; // Возвращаем копию массива
+  }
+
+  /**
+   * Добавление нового видео
+   */
+  async addVideo(video) {
+    // Имитация задержки сети
+    await this._delay(1000);
+
+    const id = ++this.lastId;
+    
+    const newVideo = {
+      ...video,
+      id,
+      url: video.blobUrl || video.dataUrl || `https://via.placeholder.com/600/92c952?text=Video_${id}`,
+      thumbnailUrl: video.thumbnailUrl || `https://via.placeholder.com/150/92c952?text=Video_${id}`
+    };
+    
+    this.videos.push(newVideo);
+    
+    // Возвращаем объект с id и url как это делал бы реальный API
+    return {
+      id: newVideo.id,
+      albumId: newVideo.albumId,
+      title: newVideo.title,
+      url: newVideo.url,
+      thumbnailUrl: newVideo.thumbnailUrl,
+      duration: newVideo.duration
+    };
+  }
+
+  /**
+   * Удаление видео по ID
+   */
+  async deleteVideo(id) {
+    // Имитация задержки сети
+    await this._delay(500);
+    
+    let index = this.videos.findIndex(v => v.id === id);
+    if (index === -1) {
+      // Пытаемся найти по remoteId, если не нашли по id
+      index = this.videos.findIndex(v => v.remoteId === id);
+    }
+    
+    if (index !== -1) {
+      this.videos.splice(index, 1);
+      return true;
+    }
+    
+    // Если ничего не нашли, просто возвращаем успех,
+    // чтобы пользовательский интерфейс мог продолжить удаление
+    return true;
+  }
+
+  /**
    * Приватный метод для генерации демо-фотографий
    */
   _generateDemoPhotos() {
@@ -109,6 +177,45 @@ export default class MockServer {
     
     // Сохраняем демо фото в мок-сервер
     this.photos = demoPhotos;
+  }
+
+  /**
+   * Приватный метод для генерации демо-видео
+   */
+  _generateDemoVideos() {
+    // Создаем локальные демо-видео
+    const demoVideos = [...Array(2)].map((_, i) => {
+      // Создаем цветной квадрат как демо-изображение для превью
+      const canvas = document.createElement('canvas');
+      canvas.width = 600;
+      canvas.height = 400;
+      const ctx = canvas.getContext('2d');
+      
+      // Разные цвета для разных превью
+      const colors = ['#9c27b0', '#3f51b5'];
+      ctx.fillStyle = colors[i % colors.length];
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      
+      // Добавляем текст на превью
+      ctx.fillStyle = 'white';
+      ctx.font = '30px Arial';
+      ctx.textAlign = 'center';
+      ctx.fillText(`Демо видео ${i + 1}`, canvas.width / 2, canvas.height / 2);
+      
+      const thumbnailUrl = canvas.toDataURL('image/jpeg');
+      
+      return {
+        id: 1000 + i,
+        albumId: 1,
+        title: `Демо видео ${i + 1}`,
+        url: "https://file-examples.com/storage/fe109025eed802ff04c0f1e/2017/04/file_example_MP4_640_3MG.mp4",
+        thumbnailUrl: thumbnailUrl,
+        duration: 15 * (i + 1)
+      };
+    });
+    
+    // Сохраняем демо видео в мок-сервер
+    this.videos = demoVideos;
   }
 
   /**

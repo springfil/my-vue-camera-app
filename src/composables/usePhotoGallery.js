@@ -1,6 +1,6 @@
 import { ref } from 'vue';
-import photoService from '../services/photoService';
-import { dataURLtoBlob, downloadImage } from '../utils/imageUtils';
+import mediaService from '../services/mediaService';
+import { dataURLtoBlob, downloadImage } from '../utils/mediaUtils';
 import Photo from '../models/Photo';
 
 /**
@@ -22,7 +22,7 @@ export function usePhotoGallery() {
       isLoading.value = true;
       statusMessage.value = 'Загрузка фотографий с сервера...';
       
-      const serverPhotos = await photoService.getPhotos();
+      const serverPhotos = await mediaService.getPhotos();
       
       // Преобразуем полученные данные в формат, используемый нашим приложением
       photos.value = serverPhotos.map(photo => new Photo({
@@ -84,7 +84,7 @@ export function usePhotoGallery() {
       const blob = await dataURLtoBlob(photo.dataUrl);
       
       // Отправляем запрос в сервис
-      const result = await photoService.uploadPhoto({
+      const result = await mediaService.uploadPhoto({
         title: photo.title,
         albumId: photo.albumId,
         timestamp: photo.timestamp,
@@ -127,7 +127,7 @@ export function usePhotoGallery() {
       
       // Используем remoteId (если есть) для удаления на сервере
       const idToDelete = photoToDelete.remoteId || photoId;
-      await photoService.deletePhoto(idToDelete);
+      await mediaService.deletePhoto(idToDelete);
       
       // Удаляем из локального состояния
       photos.value = photos.value.filter(photo => photo.id !== photoId);
