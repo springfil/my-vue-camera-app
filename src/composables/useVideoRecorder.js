@@ -26,12 +26,29 @@ export function useVideoRecorder() {
       
       if (videoElement && videoElement.srcObject) {
         stream.value = videoElement.srcObject;
-      } else {
-        // Если нет существующего потока, создаем новый
-        stream.value = await navigator.mediaDevices.getUserMedia({
-          video: true,
-          audio: true // Для записи видео нам нужен и звук
-        });
+      } else {        // Если нет существующего потока, создаем новый с настройками для iOS
+        const constraints = {
+          video: {
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+            // Для iOS рекомендуется указать диапазон frameRate
+            frameRate: { min: 15, ideal: 30, max: 30 }
+          },
+          audio: {
+            // Настройка аудио для улучшения совместимости
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true
+          }
+        };
+        
+        // Проверка на iPhone/iPad
+        const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+        if (isIOS) {
+          console.log('Запрос медиа на iOS устройстве');
+        }
+        
+        stream.value = await navigator.mediaDevices.getUserMedia(constraints);
         
         if (videoElement) {
           videoElement.srcObject = stream.value;
@@ -58,11 +75,30 @@ export function useVideoRecorder() {
       // Очищаем предыдущие записанные чанки
       recordedChunks.value = [];
       recordingDuration.value = 0;
+        // Определяем поддерживаемый формат записи
+      let options = {};
       
-      // Создаем рекордер
-      recorder.value = new MediaRecorder(stream.value, {
-        mimeType: 'video/webm;codecs=vp9' // Наиболее совместимый формат
-      });
+      // Проверяем поддерживаемые форматы для разных браузеров
+      const mimeTypes = [
+        'video/webm;codecs=vp9',
+        'video/webm;codecs=vp8',
+        'video/webm',
+        'video/mp4',
+        'video/mp4;codecs=h264',
+        ''  // Пустая строка означает дефолтный формат
+      ];
+      
+      // Находим первый поддерживаемый формат
+      for (const mimeType of mimeTypes) {
+        if (mimeType === '' || MediaRecorder.isTypeSupported(mimeType)) {
+          options = mimeType ? { mimeType } : {};
+          console.log(`Используется формат записи: ${mimeType || 'дефолтный'}`);
+          break;
+        }
+      }
+      
+      // Создаем рекордер с определенным выше форматом
+      recorder.value = new MediaRecorder(stream.value, options);
       
       // Слушаем события рекордера
       recorder.value.ondataavailable = (event) => {
@@ -70,9 +106,18 @@ export function useVideoRecorder() {
           recordedChunks.value.push(event.data);
         }
       };
+        // Начинаем запись
+      // На iOS таймслайс записи должен быть достаточно большим
+      const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
       
-      // Начинаем запись
-      recorder.value.start(100); // Подаем данные каждые 100мс
+      if (isIOS) {
+        // Для iOS подаем данные каждые 500мс
+        recorder.value.start(500);
+        console.log('Запись на iOS устройстве');
+      } else {
+        // Для других устройств подаем данные каждые 100мс
+        recorder.value.start(100);
+      }
       isRecording.value = true;
       
       // Запускаем таймер для отслеживания длительности записи
@@ -100,9 +145,21 @@ export function useVideoRecorder() {
         recorder.value.onstop = async () => {
           // Очищаем таймер
           clearInterval(recordingTimer.value);
+            // Определяем тип MIME для создаваемого Blob
+          let mimeType = 'video/webm';
+          
+          // Берем тип из рекордера, если он был установлен
+          if (recorder.value && recorder.value.mimeType) {
+            mimeType = recorder.value.mimeType;
+          } else if (recordedChunks.value.length > 0 && recordedChunks.value[0].type) {
+            // Иначе пробуем взять из первого чанка
+            mimeType = recordedChunks.value[0].type;
+          }
+          
+          console.log('Используем MIME тип для Blob:', mimeType);
           
           // Создаем Blob из записанных чанков
-          const blob = new Blob(recordedChunks.value, { type: 'video/webm' });
+          const blob = new Blob(recordedChunks.value, { type: mimeType });
           const blobUrl = URL.createObjectURL(blob);
           
           // Получаем превью из первого кадра
@@ -174,6 +231,11 @@ export function useVideoRecorder() {
           };
         };
       });
+        // Проверяем, нужно ли дополнительно запросить данные
+      // (для Safari на iOS это может потребоваться)
+      if (recorder.value.state === 'recording') {
+        recorder.value.requestData(); // Запрашиваем доступные данные
+      }
       
       // Останавливаем запись
       recorder.value.stop();
