@@ -1,9 +1,12 @@
 <script setup>
-import HelloWorld from './components/HelloWorld.vue'
+import CameraApp from './components/CameraApp.vue'
 </script>
 
 <template>
-  <HelloWorld msg="Vite + Vue" />
+  <div class="header">
+    <h1>Vue Camera App</h1>
+  </div>
+  <CameraApp />
 </template>
 
 <style scoped>
@@ -18,5 +21,16 @@ import HelloWorld from './components/HelloWorld.vue'
 }
 .logo.vue:hover {
   filter: drop-shadow(0 0 2em #42b883aa);
+}
+
+.header {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 20px;
+}
+
+h1 {
+  color: #42b983;
+  text-align: center;
 }
 </style>
