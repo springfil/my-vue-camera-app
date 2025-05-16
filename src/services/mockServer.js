@@ -6,6 +6,16 @@ export default class MockServer {
     this.photos = [];
     this.videos = [];
     this.lastId = 5000;
+    
+    // Настройки для ST Drive API
+    this.stDriveEnabled = true; // По умолчанию включено
+    this.stDriveToken = import.meta.env.VITE_ST_DRIVE_TOKEN || '';
+    this.stDriveApiUrl = 'https://st-drive.t2.ru/api/files';
+    
+    // Проверяем наличие токена при инициализации
+    if (this.stDriveEnabled && !this.stDriveToken) {
+      console.warn('Внимание: ST Drive включен, но JWT токен не установлен в .env файле (VITE_ST_DRIVE_TOKEN)');
+    }
   }
 
   /**
@@ -22,7 +32,6 @@ export default class MockServer {
 
     return [...this.photos]; // Возвращаем копию массива
   }
-
   /**
    * Добавление новой фотографии
    */
@@ -39,16 +48,59 @@ export default class MockServer {
       thumbnailUrl: photo.dataUrl
     };
     
-    this.photos.push(newPhoto);
-    
-    // Возвращаем объект с id и url как это делал бы реальный API
-    return {
+    // Результат запроса для возврата
+    const result = {
       id: newPhoto.id,
       albumId: newPhoto.albumId,
       title: newPhoto.title,
       url: newPhoto.url,
       thumbnailUrl: newPhoto.thumbnailUrl
     };
+    
+    // Отправляем фото в ST Drive
+    if (this.stDriveEnabled && photo.dataUrl) {
+      try {
+        // Генерируем уникальный ID файла для ST Drive
+        const fileId = `PHOTO_${Date.now()}`;
+        
+        // Отправляем фото в ST Drive
+        const stDriveResult = await this._uploadToStDrive(photo.dataUrl, fileId);
+        
+        console.log(`Фото успешно отправлено в ST Drive с ID: ${fileId}`, stDriveResult);
+        
+        // Добавляем информацию о загрузке в ST Drive
+        newPhoto.stDrive = {
+          fileId: fileId,
+          uploadTime: new Date().toISOString(),
+          status: 'success'
+        };
+        
+        // Добавляем информацию о ST Drive в результат
+        result.stDrive = {
+          success: true,
+          fileId: fileId
+        };
+      } catch (error) {
+        console.error('Ошибка при отправке фото в ST Drive:', error);
+        
+        // Добавляем информацию об ошибке
+        newPhoto.stDrive = {
+          error: error.message,
+          status: 'failed'
+        };
+        
+        // Добавляем информацию об ошибке в результат
+        result.stDrive = {
+          success: false,
+          error: error.message
+        };
+      }
+    }
+    
+    // Сохраняем фото в локальную коллекцию
+    this.photos.push(newPhoto);
+    
+    return result;
   }
 
   /**
@@ -217,11 +269,107 @@ export default class MockServer {
     // Сохраняем демо видео в мок-сервер
     this.videos = demoVideos;
   }
-
   /**
    * Вспомогательный метод для имитации задержки
    */
   _delay(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
+  }
+  
+  /**
+   * Метод для отправки данных в ST Drive API
+   * @param {string} dataUrl - Data URL изображения
+   * @param {string} fileId - Идентификатор файла
+   * @returns {Promise<Object>} - Ответ от сервера
+   * @private
+   */  async _uploadToStDrive(dataUrl, fileId) {
+    if (!this.stDriveToken) {
+      throw new Error('JWT токен не установлен. Проверьте переменную окружения VITE_ST_DRIVE_TOKEN.');
+    }
+    
+    try {
+      // Конвертируем dataUrl в Blob
+      const blob = await this._dataURLtoBlob(dataUrl);
+    
+      // Получаем тип контента из dataUrl
+      const contentType = dataUrl.split(',')[0].split(':')[1].split(';')[0];
+      
+        console.log(`Тип контента: ${contentType}`);
+        console.log('blob', blob);
+
+
+      // Текущая дата в формате YYYY-MM-DD
+      const creationDate = new Date().toISOString().split('T')[0];
+      
+      // Заголовки запроса
+      const headers = {
+        'Authorization': `Bearer ${this.stDriveToken}`,
+        'Content-Type': contentType,
+        'X-FileTags': 'photo,vue-app',
+        'X-RequireAuthentication': 'false',
+        'X-CompressionQuality': '85',
+        'X-FileCreationDate': creationDate
+      };
+        console.log(`Отправка файла в ST Drive: ${fileId}`, {
+        fileSize: blob.size,
+        contentType,
+        headers
+      });
+      
+      // Выполняем реальный запрос к API
+      const url = `${this.stDriveApiUrl}/${fileId}`;
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: headers,
+        body: blob
+      });
+          console.log('Ответ от ST Drive:', response);
+
+      // Получаем статус ответа
+      const status = response.status;
+      
+      // При статусе 201 (Created) обычно тело ответа может быть пустым
+      // Формируем объект результата основываясь на статусе и URL
+      const result = {
+        success: status >= 200 && status < 300,
+        status: status,
+        statusText: response.statusText,
+        data: {
+          fileId: fileId,
+          url: response.url,
+          createdAt: new Date().toISOString()
+        },
+        headers: Object.fromEntries([...response.headers.entries()])
+      };
+      
+      console.log(`Ответ от ST Drive для файла ${fileId}:`, result);
+      
+      return result;
+    } catch (error) {
+      console.error('Ошибка при отправке файла в ST Drive:', error);
+      throw error;
+    }
+  }
+  
+  /**
+   * Преобразовать Data URL в Blob
+   * @param {string} dataURL - Data URL
+   * @returns {Promise<Blob>} - Promise с Blob объектом
+   * @private
+   */
+  _dataURLtoBlob(dataURL) {
+    return new Promise((resolve) => {
+      const arr = dataURL.split(',');
+      const mime = arr[0].match(/:(.*?);/)[1];
+      const bstr = atob(arr[1]);
+      let n = bstr.length;
+      const u8arr = new Uint8Array(n);
+      
+      while (n--) {
+        u8arr[n] = bstr.charCodeAt(n);
+      }
+      
+      resolve(new Blob([u8arr], { type: mime }));
+    });
   }
 }
