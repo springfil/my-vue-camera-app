@@ -1,6 +1,5 @@
 import { ref } from 'vue';
 import { createVideoThumbnail, getVideoDuration } from '../utils/mediaUtils';
-import mediaService from '../services/mediaService';
 import Video from '../models/Video';
 
 /**
@@ -280,18 +279,12 @@ export function useVideoRecorder() {
     isRecording.value = false;
   }
   
-  // При уничтожении компонента
-  function onUnmounted() {
-    cleanupVideoRecording();
-  }
-  
   return {
     isRecording,
     recordingDuration,
     errorMessage,
     startRecording,
     stopRecording,
-    cleanupVideoRecording,
-    onUnmounted
+    cleanupVideoRecording, 
   };
 }

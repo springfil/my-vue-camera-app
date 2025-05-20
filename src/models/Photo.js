@@ -1,9 +1,11 @@
 /**
  * Модель данных фотографии
  */
+import { generateMediaId } from '../utils/idUtils';
+
 export default class Photo {
   constructor({
-    id = Date.now(),
+    id = generateMediaId('PHOTO'),
     remoteId = null,
     dataUrl = null,
     thumbnailUrl = null,

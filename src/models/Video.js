@@ -1,9 +1,11 @@
 /**
  * Класс для представления видеозаписей
  */
+import { generateMediaId } from '../utils/idUtils';
+
 export default class Video {
   constructor(data = {}) {
-    this.id = data.id || this._generateId();
+    this.id = data.id || generateMediaId('VIDEO');
     this.albumId = data.albumId || 1;
     this.remoteId = data.remoteId || null;
     this.title = data.title || `Видео ${new Date().toLocaleDateString()}`;
@@ -18,15 +20,6 @@ export default class Video {
     this.timestamp = data.timestamp || new Date().toLocaleString();
     this.uploadedToServer = data.uploadedToServer || false;
   }
-
-  /**
-   * Генерация уникального локального ID
-   * @private
-   */
-  _generateId() {
-    return `video_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
-  }
-
   /**
    * Создание объекта Video из данных сервера
    * @param {Object} serverData - Данные от сервера
