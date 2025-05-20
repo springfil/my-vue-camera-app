@@ -17,22 +17,41 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    environment: VITE_ST_DRIVE_TOKEN
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: "20"
           cache: 'npm'
+
       - name: Install dependencies
         run: npm ci
+      
+      - name: Debug Token
+        run: |
+          if [ -n "$VITE_ST_DRIVE_TOKEN" ]; then
+            echo "✅ Token is present"
+            echo "Token prefix: ${VITE_ST_DRIVE_TOKEN:0:10}..."
+          else
+            echo "❌ Token is missing"
+          fi
+        env:
+          VITE_ST_DRIVE_TOKEN: ${{ secrets.VITE_ST_DRIVE_TOKEN }}
+
       - name: Build
+        env:
+          VITE_ST_DRIVE_TOKEN: ${{ secrets.VITE_ST_DRIVE_TOKEN }}
         run: npm run build
+
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
           path: ./dist
+
   deploy:
     environment:
       name: github-pages
