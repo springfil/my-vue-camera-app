@@ -1,6 +1,9 @@
 /**
  * Мок-сервер для имитации работы с API
  */
+import { generateMediaId } from '../utils/idUtils';
+import { dataURLtoBlob } from '../utils/mediaUtils';
+
 export default class MockServer {
   constructor() {
     this.photos = [];
@@ -36,6 +39,7 @@ export default class MockServer {
    * Добавление новой фотографии
    */
   async addPhoto(photo) {
+    console.log('Добавление фото:', photo);
     // Имитация задержки сети
     await this._delay(1000);
 
@@ -44,7 +48,7 @@ export default class MockServer {
     const newPhoto = {
       ...photo,
       id,
-      url: photo.dataUrl || `https://via.placeholder.com/600/92c952?text=Photo_${id}`,
+      url: photo.dataUrl,
       thumbnailUrl: photo.dataUrl
     };
     
@@ -61,7 +65,7 @@ export default class MockServer {
     if (this.stDriveEnabled && photo.dataUrl) {
       try {
         // Генерируем уникальный ID файла для ST Drive
-        const fileId = `PHOTO_${Date.now()}`;
+        const fileId = generateMediaId('PHOTO');
         
         // Отправляем фото в ST Drive
         const stDriveResult = await this._uploadToStDrive(photo.dataUrl, fileId);
@@ -140,11 +144,11 @@ export default class MockServer {
 
     return [...this.videos]; // Возвращаем копию массива
   }
-
   /**
    * Добавление нового видео
    */
   async addVideo(video) {
+    console.log('Добавление видео:', video);
     // Имитация задержки сети
     await this._delay(1000);
 
@@ -157,10 +161,8 @@ export default class MockServer {
       thumbnailUrl: video.thumbnailUrl || `https://via.placeholder.com/150/92c952?text=Video_${id}`
     };
     
-    this.videos.push(newVideo);
-    
-    // Возвращаем объект с id и url как это делал бы реальный API
-    return {
+    // Результат запроса для возврата
+    const result = {
       id: newVideo.id,
       albumId: newVideo.albumId,
       title: newVideo.title,
@@ -168,6 +170,53 @@ export default class MockServer {
       thumbnailUrl: newVideo.thumbnailUrl,
       duration: newVideo.duration
     };
+      // Отправляем видео в ST Drive, если есть blobUrl или dataUrl
+    if (this.stDriveEnabled && (video.blobUrl || video.dataUrl)) {
+      try {
+        // Генерируем уникальный ID файла для ST Drive
+        const fileId = generateMediaId('VIDEO');
+        
+        // Определяем источник видео (blobUrl или dataUrl)
+        const videoSource = video.blobUrl || video.dataUrl;
+        
+        // Отправляем видео в ST Drive
+        const stDriveResult = await this._uploadVideoToStDrive(videoSource, fileId, video);
+        
+        console.log(`Видео успешно отправлено в ST Drive с ID: ${fileId}`, stDriveResult);
+        
+        // Добавляем информацию о загрузке в ST Drive
+        newVideo.stDrive = {
+          fileId: fileId,
+          uploadTime: new Date().toISOString(),
+          status: 'success'
+        };
+        
+        // Добавляем информацию о ST Drive в результат
+        result.stDrive = {
+          success: true,
+          fileId: fileId
+        };
+      } catch (error) {
+        console.error('Ошибка при отправке видео в ST Drive:', error);
+        
+        // Добавляем информацию об ошибке
+        newVideo.stDrive = {
+          error: error.message,
+          status: 'failed'
+        };
+        
+        // Добавляем информацию об ошибке в результат
+        result.stDrive = {
+          success: false,
+          error: error.message
+        };
+      }
+    }
+    
+    // Сохраняем видео в локальную коллекцию
+    this.videos.push(newVideo);
+    
+    return result;
   }
 
   /**
@@ -268,8 +317,7 @@ export default class MockServer {
     
     // Сохраняем демо видео в мок-сервер
     this.videos = demoVideos;
-  }
-  /**
+  }  /**
    * Вспомогательный метод для имитации задержки
    */
   _delay(ms) {
@@ -277,19 +325,104 @@ export default class MockServer {
   }
   
   /**
-   * Метод для отправки данных в ST Drive API
-   * @param {string} dataUrl - Data URL изображения
+   * Метод для отправки видео в ST Drive API
+   * @param {string} videoSource - URL или Blob URL видео
    * @param {string} fileId - Идентификатор файла
+   * @param {Object} videoData - Метаданные видео (длительность, заголовок и т.д.)
    * @returns {Promise<Object>} - Ответ от сервера
    * @private
-   */  async _uploadToStDrive(dataUrl, fileId) {
+   */
+  async _uploadVideoToStDrive(videoSource, fileId, videoData) {
     if (!this.stDriveToken) {
       throw new Error('JWT токен не установлен. Проверьте переменную окружения VITE_ST_DRIVE_TOKEN.');
     }
     
     try {
+      // Получаем blob из URL или dataUrl
+      let blob;
+      let contentType;
+      
+      if (videoSource.startsWith('blob:')) {
+        // Если это Blob URL, получаем Blob через fetch
+        const response = await fetch(videoSource);
+        blob = await response.blob();
+        contentType = blob.type || 'video/mp4';      } else if (videoSource.startsWith('data:')) {
+        // Если это Data URL, используем функцию для преобразования
+        blob = await dataURLtoBlob(videoSource);
+        contentType = videoSource.split(',')[0].split(':')[1].split(';')[0];
+      } else {
+        throw new Error('Неподдерживаемый формат видео');
+      }
+      
+      console.log(`Тип контента видео: ${contentType}`);
+      console.log('Видео blob:', blob);
+      
+        // Заголовки запроса
+      const headers = {
+        'Authorization': `Bearer ${this.stDriveToken}`,
+        'Content-Type': contentType,
+        'X-FileTags': 'video,vue-app',
+        'X-RequireAuthentication': 'false',
+        'X-CompressionQuality': '75', // Для видео используем меньшее сжатие
+      };
+      
+      console.log(`Отправка видео в ST Drive: ${fileId}`, {
+        fileSize: blob.size,
+        contentType,
+        headers,
+      });
+        // Выполняем реальный запрос к API
+      const url = `${this.stDriveApiUrl}/${fileId}`;
+      
+      // Для больших файлов может потребоваться более долгий таймаут
+      const response = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: blob,
+      });
+      
+      console.log('Ответ от ST Drive:', response);
+      
+      // Получаем статус ответа
+      const status = response.status;
+      
+      // При статусе 201 (Created) обычно тело ответа может быть пустым
+      // Формируем объект результата основываясь на статусе и URL
+      const result = {
+        success: status >= 200 && status < 300,
+        status: status,
+        statusText: response.statusText,
+        data: {
+          fileId: fileId,
+          url: response.url,
+          createdAt: new Date().toISOString()
+        },
+        headers: Object.fromEntries([...response.headers.entries()])
+      };
+      
+      console.log(`Ответ от ST Drive для видео ${fileId}:`, result);
+      
+      return result;
+    } catch (error) {
+      console.error('Ошибка при отправке видео в ST Drive:', error);
+      throw error;
+    }
+  }
+  
+  /**
+   * @private
+   * Метод для отправки данных в ST Drive API
+   * @param {string} dataUrl - Data URL изображения
+   * @param {string} fileId - Идентификатор файла
+   * @returns {Promise<Object>} - Ответ от сервера
+   */
+  async _uploadToStDrive(dataUrl, fileId) {
+    if (!this.stDriveToken) {
+      throw new Error('JWT токен не установлен. Проверьте переменную окружения VITE_ST_DRIVE_TOKEN.');
+    }    
+    try {
       // Конвертируем dataUrl в Blob
-      const blob = await this._dataURLtoBlob(dataUrl);
+      const blob = await dataURLtoBlob(dataUrl);
     
       // Получаем тип контента из dataUrl
       const contentType = dataUrl.split(',')[0].split(':')[1].split(';')[0];
@@ -345,31 +478,8 @@ export default class MockServer {
       console.log(`Ответ от ST Drive для файла ${fileId}:`, result);
       
       return result;
-    } catch (error) {
-      console.error('Ошибка при отправке файла в ST Drive:', error);
+    } catch (error) {      console.error('Ошибка при отправке файла в ST Drive:', error);
       throw error;
     }
-  }
-  
-  /**
-   * Преобразовать Data URL в Blob
-   * @param {string} dataURL - Data URL
-   * @returns {Promise<Blob>} - Promise с Blob объектом
-   * @private
-   */
-  _dataURLtoBlob(dataURL) {
-    return new Promise((resolve) => {
-      const arr = dataURL.split(',');
-      const mime = arr[0].match(/:(.*?);/)[1];
-      const bstr = atob(arr[1]);
-      let n = bstr.length;
-      const u8arr = new Uint8Array(n);
-      
-      while (n--) {
-        u8arr[n] = bstr.charCodeAt(n);
-      }
-      
-      resolve(new Blob([u8arr], { type: mime }));
-    });
   }
 }
